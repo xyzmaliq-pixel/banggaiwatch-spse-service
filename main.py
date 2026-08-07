@@ -20,11 +20,30 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from pyproc import Lpse
 from typing import Optional
+import requests
 
 app = FastAPI(title="BanggaiWatch - SPSE Enrichment Service")
 
 # Slug host LPSE Kabupaten Banggai, sesuai spse.inaproc.id/banggaikab (§8)
 LPSE_HOST = "banggaikab"
+
+# Header "menyamar sebagai browser" - server LKPP Satu Data menolak
+# permintaan dari requests library polos (User-Agent default Python)
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+}
+
+
+def _get_isb(url: str, timeout: int = 30):
+    """Ambil data dari API LKPP Satu Data (ISB) dengan header browser wajar."""
+    resp = requests.get(url, headers=BROWSER_HEADERS, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+    if isinstance(data, dict):
+        data = data.get("data", data.get("result", []))
+    return data if isinstance(data, list) else []
 
 
 class EnrichRequest(BaseModel):
@@ -46,7 +65,7 @@ def master_lpse(query: str = Query(..., description="Kata kunci nama LPSE, mis. 
     gagal akibat halaman dirender lewat JavaScript.
     """
     try:
-        daftar = Lpse.get_master_lpse()
+        daftar = _get_isb("https://isb.lkpp.go.id/isb-2/api/satudata/MasterLPSE")
         hasil = [d for d in daftar if query.lower() in str(d.get("nama_lpse", "")).lower()]
         return {"jumlah_ditemukan": len(hasil), "data": hasil}
     except Exception as e:
@@ -63,7 +82,8 @@ def tender_umum(kd_lpse: int = Query(..., description="Kode LPSE dari /master-lp
     ke uraian_pekerjaan/volume_pekerjaan.
     """
     try:
-        data = Lpse.get_tender_umum_publik(tahun_anggaran=tahun, kd_lpse=kd_lpse)
+        url = f"https://isb.lkpp.go.id/isb-2/api/satudata/TenderUmumPublik/{tahun}/{kd_lpse}"
+        data = _get_isb(url)
         return {"jumlah": len(data), "data": data}
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Gagal ambil tender umum publik: {e}")
