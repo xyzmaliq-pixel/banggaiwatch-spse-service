@@ -54,9 +54,22 @@ def scrape_pengumuman(kode_tender: str, host: str = LPSE_HOST) -> dict:
     Baca langsung halaman publik pengumuman lelang (HTML biasa, TANPA
     login/auth token - berbeda dari pendekatan pyproc yang gagal karena
     SPSE 4.5 mengatur cookie sesi berbeda dari yang diharapkan pyproc).
+
+    Memakai session: mampir ke beranda dulu (seperti browser sungguhan)
+    sebelum ambil halaman detail, karena permintaan langsung ke halaman
+    dalam tanpa "basa-basi" ini bisa ditolak oleh sistem keamanan situs.
     """
-    url = f"https://spse.inaproc.id/{host}/lelang/{kode_tender}/pengumumanlelang"
-    resp = requests.get(url, headers=BROWSER_HEADERS, timeout=30)
+    beranda_url = f"https://spse.inaproc.id/{host}"
+    detail_url = f"https://spse.inaproc.id/{host}/lelang/{kode_tender}/pengumumanlelang"
+
+    session = requests.Session()
+    session.headers.update(BROWSER_HEADERS)
+
+    # Langkah 1: kunjungi beranda dulu supaya dapat cookie sesi wajar
+    session.get(beranda_url, timeout=30)
+
+    # Langkah 2: baru ambil halaman detail, pakai session yang sama
+    resp = session.get(detail_url, timeout=30, headers={"Referer": beranda_url})
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
