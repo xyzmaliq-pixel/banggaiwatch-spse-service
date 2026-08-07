@@ -94,7 +94,7 @@ def search_paket(keyword: str = Query(..., description="Kata kunci nama paket"),
                   tahun: Optional[int] = None):
     """Cari paket tender di LPSE Kabupaten Banggai berdasarkan kata kunci."""
     try:
-        with Lpse(LPSE_HOST, timeout=30) as lpse:
+        with Lpse(LPSE_HOST, timeout=30, user_agent=BROWSER_HEADERS["User-Agent"]) as lpse:
             kwargs = {"search_keyword": keyword, "length": 10}
             if tahun:
                 kwargs["tahun"] = tahun
@@ -116,7 +116,7 @@ def get_detail(paket_id: str):
     langsung dari data nyata.
     """
     try:
-        with Lpse(LPSE_HOST, timeout=30) as lpse:
+        with Lpse(LPSE_HOST, timeout=30, user_agent=BROWSER_HEADERS["User-Agent"]) as lpse:
             detail = lpse.detil_paket_tender(paket_id)
             detail.get_all_detil()
             data = detail.todict()
@@ -135,7 +135,7 @@ def enrich_paket(req: EnrichRequest):
     dulu (cek dengan /paket/detail) sebelum dipakai produksi penuh.
     """
     try:
-        with Lpse(LPSE_HOST, timeout=30) as lpse:
+        with Lpse(LPSE_HOST, timeout=30, user_agent=BROWSER_HEADERS["User-Agent"]) as lpse:
             hasil_cari = lpse.get_paket_tender(search_keyword=req.nama_paket, length=5)
             daftar = hasil_cari.get("data", [])
 
