@@ -37,6 +37,38 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/master-lpse")
+def master_lpse(query: str = Query(..., description="Kata kunci nama LPSE, mis. 'banggai'")):
+    """
+    Cari kode LPSE (kd_lpse) resmi lewat API LKPP Satu Data (bukan scraping
+    halaman SPSE biasa). Dipakai untuk menemukan kd_lpse Kabupaten Banggai
+    yang benar, karena scraping langsung ke spse.inaproc.id/banggaikab
+    gagal akibat halaman dirender lewat JavaScript.
+    """
+    try:
+        daftar = Lpse.get_master_lpse()
+        hasil = [d for d in daftar if query.lower() in str(d.get("nama_lpse", "")).lower()]
+        return {"jumlah_ditemukan": len(hasil), "data": hasil}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Gagal ambil master LPSE: {e}")
+
+
+@app.get("/paket/tender-umum")
+def tender_umum(kd_lpse: int = Query(..., description="Kode LPSE dari /master-lpse"),
+                 tahun: int = Query(..., description="Tahun anggaran, mis. 2026")):
+    """
+    Ambil data tender lewat API LKPP Satu Data (jalur alternatif),
+    bukan lewat scraping halaman SPSE langsung. Mengembalikan data mentah
+    dulu supaya kita bisa lihat nama field aslinya sebelum dipetakan
+    ke uraian_pekerjaan/volume_pekerjaan.
+    """
+    try:
+        data = Lpse.get_tender_umum_publik(tahun_anggaran=tahun, kd_lpse=kd_lpse)
+        return {"jumlah": len(data), "data": data}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Gagal ambil tender umum publik: {e}")
+
+
 @app.get("/paket/search")
 def search_paket(keyword: str = Query(..., description="Kata kunci nama paket"),
                   tahun: Optional[int] = None):
