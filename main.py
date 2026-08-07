@@ -21,6 +21,9 @@ from pydantic import BaseModel
 from pyproc import Lpse
 from typing import Optional
 import requests
+import io
+from bs4 import BeautifulSoup
+import pdfplumber
 
 app = FastAPI(title="BanggaiWatch - SPSE Enrichment Service")
 
@@ -46,6 +49,54 @@ def _get_isb(url: str, timeout: int = 30):
     return data if isinstance(data, list) else []
 
 
+def scrape_pengumuman(kode_tender: str, host: str = LPSE_HOST) -> dict:
+    """
+    Baca langsung halaman publik pengumuman lelang (HTML biasa, TANPA
+    login/auth token - berbeda dari pendekatan pyproc yang gagal karena
+    SPSE 4.5 mengatur cookie sesi berbeda dari yang diharapkan pyproc).
+    """
+    url = f"https://spse.inaproc.id/{host}/lelang/{kode_tender}/pengumumanlelang"
+    resp = requests.get(url, headers=BROWSER_HEADERS, timeout=30)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    data = {}
+    pdf_url = None
+
+    for row in soup.find_all("tr"):
+        cells = row.find_all(["td", "th"])
+        if len(cells) >= 2:
+            label = cells[0].get_text(strip=True)
+            value_cell = cells[1]
+            value = value_cell.get_text(strip=True)
+
+            link = value_cell.find("a", href=True)
+            if link and link["href"].lower().endswith(".pdf"):
+                href = link["href"]
+                pdf_url = href if href.startswith("http") else f"https://spse.inaproc.id{href}"
+
+            if label:
+                data[label] = value
+
+    if pdf_url:
+        data["_uraian_pekerjaan_pdf_url"] = pdf_url
+
+    return data
+
+
+def extract_pdf_text(pdf_url: str) -> str:
+    """Unduh PDF uraian pekerjaan dan ambil teksnya."""
+    resp = requests.get(pdf_url, headers=BROWSER_HEADERS, timeout=30)
+    resp.raise_for_status()
+    parts = []
+    with pdfplumber.open(io.BytesIO(resp.content)) as pdf:
+        for page in pdf.pages:
+            t = page.extract_text()
+            if t:
+                parts.append(t)
+    return "\n".join(parts)
+
+
 class EnrichRequest(BaseModel):
     kode_rup: str
     nama_paket: str
@@ -54,6 +105,51 @@ class EnrichRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/paket/detail-langsung/{kode_tender}")
+def detail_langsung(kode_tender: str):
+    """
+    Cara baru (tanpa pyproc): baca langsung halaman pengumuman lelang.
+    Cepat, tapi belum termasuk isi teks PDF uraian pekerjaan.
+    Contoh kode_tender yang terbukti ada: 10159660000
+    """
+    try:
+        data = scrape_pengumuman(kode_tender)
+        if not data:
+            raise HTTPException(status_code=404, detail="Halaman ditemukan tapi tidak ada data tabel terbaca.")
+        return data
+    except requests.exceptions.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Gagal buka halaman SPSE: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Gagal membaca halaman: {e}")
+
+
+@app.get("/paket/detail-lengkap/{kode_tender}")
+def detail_lengkap(kode_tender: str):
+    """
+    Sama seperti /paket/detail-langsung, TAPI juga mengunduh dan membaca
+    isi PDF "Uraian Singkat Pekerjaan" - lebih lambat karena perlu
+    mengunduh file PDF-nya dulu.
+    """
+    try:
+        data = scrape_pengumuman(kode_tender)
+        if not data:
+            raise HTTPException(status_code=404, detail="Halaman ditemukan tapi tidak ada data tabel terbaca.")
+
+        pdf_url = data.get("_uraian_pekerjaan_pdf_url")
+        if pdf_url:
+            try:
+                data["uraian_pekerjaan_teks"] = extract_pdf_text(pdf_url)
+            except Exception as e:
+                data["uraian_pekerjaan_teks"] = None
+                data["_pdf_error"] = str(e)
+
+        return data
+    except requests.exceptions.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Gagal buka halaman SPSE: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Gagal membaca halaman: {e}")
 
 
 @app.get("/master-lpse")
