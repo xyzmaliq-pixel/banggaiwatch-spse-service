@@ -1,3 +1,5 @@
 fastapi
 uvicorn[standard]
 pyproc[mcp]
+beautifulsoup4
+pdfplumber
