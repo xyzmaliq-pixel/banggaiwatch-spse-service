@@ -120,6 +120,22 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/pdf/extract")
+def pdf_extract(url: str = Query(..., description="Alamat unduhan PDF dari spse.inaproc.id")):
+    """
+    Uji coba: unduh PDF dari alamat manapun (termasuk /banggaikab/dl/...)
+    dan ekstrak teksnya. Dipakai untuk cek apakah endpoint unduhan file
+    ini diblokir juga seperti halaman HTML, atau ternyata longgar.
+    """
+    try:
+        teks = extract_pdf_text(url)
+        return {"berhasil": True, "panjang_teks": len(teks), "teks": teks}
+    except requests.exceptions.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Gagal unduh PDF: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Gagal proses PDF: {e}")
+
+
 @app.get("/paket/detail-langsung/{kode_tender}")
 def detail_langsung(kode_tender: str):
     """
