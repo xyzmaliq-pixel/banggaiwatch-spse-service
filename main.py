@@ -120,6 +120,21 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/test/fetch")
+def test_fetch(url: str = Query(..., description="URL sembarang untuk dites aksesnya")):
+    """Uji cepat: apakah alamat ini bisa diakses dari server cloud (Render) atau diblokir."""
+    try:
+        resp = requests.get(url, headers=BROWSER_HEADERS, timeout=20)
+        return {
+            "status_code": resp.status_code,
+            "berhasil": resp.status_code == 200,
+            "panjang_konten": len(resp.text),
+            "cuplikan": resp.text[:800]
+        }
+    except Exception as e:
+        return {"berhasil": False, "error": str(e)}
+
+
 @app.get("/pdf/extract")
 def pdf_extract(url: str = Query(..., description="Alamat unduhan PDF dari spse.inaproc.id")):
     """
